@@ -1,0 +1,23 @@
+#!/bin/sh
+
+if [ ! -z "$1" ] ; then
+        [ -d "$1" ] && cd $1
+fi
+
+if test -d ".git"; then
+        git log --decorate --date-order --date=short | \
+        sed -e '/^Merge.*$/d' | \
+        sed -e '/^Version Bump.*$/d' | \
+        awk '/^Author/ {sub(/\\$/,""); getline t; print $0 t; next}; 1' | \
+        sed -s 's/^commit .*tag: \(.*\))/Version \1/g' | \
+        sed 's/^Version \([0-9]*.[0-9]*.[0-9]*\)[,].*/Version \1/g' | \
+        awk '{ if ($1=="commit")  printf "%s", $0 ; else print $0}' | \
+        sed -e '/^commit.*$/d' | sed -e 's/>Date:   \([0-9]*-[0-9]*-[0-9]*\)/>\n(\1)/g'  | \
+        sed -e '/^Author.*$/d'  | grep -vEi "(merge branch|fix merge conflicts|version bump)" | \
+        awk '{ if ($1=="Version")  printf "%s ", $0 ; else print $0}' | \
+        awk '{ if ($1!="") { if ($1== "Version") { d=$3 ; sub(/^[\(]+/, "", d) ; sub(/[\)]+$/, "", d) ; printf("\n%s, Version %s\n\n", d, $2) ; }  else  { s=$0 ; sub(/[ \t-]*/, "", s) ; printf("  * %s\n", s) } }  }'
+    exit 0
+else
+    echo "No git repository present."
+    exit 1
+fi
