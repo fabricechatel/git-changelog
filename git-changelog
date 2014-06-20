@@ -1,23 +1,40 @@
 #!/bin/sh
+# Convert git log to GNU-style ChangeLog file.
 
+LASTEST=0
 if [ ! -z "$1" ] ; then
-        [ -d "$1" ] && cd $1
+	if [ "$1" != "latest" ] ; then
+		[ -d "$1" ] && cd $1
+	else
+		LATEST=1
+	fi
 fi
-
+IFS="" ; l="" ; old_l="" ; nl=0
 if test -d ".git"; then
-        git log --decorate --date-order --date=short | \
-        sed -e '/^Merge.*$/d' | \
-        sed -e '/^Version Bump.*$/d' | \
-        awk '/^Author/ {sub(/\\$/,""); getline t; print $0 t; next}; 1' | \
-        sed -s 's/^commit .*tag: \(.*\))/Version \1/g' | \
-        sed 's/^Version \([0-9]*.[0-9]*.[0-9]*\)[,].*/Version \1/g' | \
-        awk '{ if ($1=="commit")  printf "%s", $0 ; else print $0}' | \
-        sed -e '/^commit.*$/d' | sed -e 's/>Date:   \([0-9]*-[0-9]*-[0-9]*\)/>\n(\1)/g'  | \
-        sed -e '/^Author.*$/d'  | grep -vEi "(merge branch|fix merge conflicts|version bump)" | \
-        awk '{ if ($1=="Version")  printf "%s ", $0 ; else print $0}' | \
-        awk '{ if ($1!="") { if ($1== "Version") { d=$3 ; sub(/^[\(]+/, "", d) ; sub(/[\)]+$/, "", d) ; printf("\n%s, Version %s\n\n", d, $2) ; }  else  { s=$0 ; sub(/[ \t-]*/, "", s) ; printf("  * %s\n", s) } }  }'
-    exit 0
+	branch=$(git log --decorate --date-order --date=short | head -n1 | sed "s/^.*(\(.*\))$/\1/" | awk -F "tag: " '{ print $NF }' | sed "s/.*[, ]origin\/\(.*\)[,].*/\1/" | sed "s/.*[, ]origin\/\(.*\)/\1/" | sed -e "s/origin\///" -e "s/tags\///")
+	[ -n "$branch" -a -z "$(echo $branch | grep "release")" ] && filter_cmd="grep -vEi \"(beta|alpha|release)\"" || filter_cmd="grep -vEi \"(release)\""
+	git log --decorate --date-order --date=short | \
+	sed -e '/^Merge.*$/d' | \
+	sed -e '/^Version Bump.*$/d' | \
+	awk '/^Author/ {sub(/\\$/,""); getline t; print $0 t; next}; 1' | \
+	sed -e 's/origin\/release\//tag: /' -e 's/origin\/hotfix\//tag: /' | \
+	sed -s 's/^commit .*tag: \(.*\))/Version \1/g' | \
+	sed 's/^Version \([0-9]*.[0-9]*.[0-9]*\)[,].*/Version \1/g' | \
+	awk '{ if ($1=="commit")  printf "%s", $0 ; else print $0}' | \
+	sed -e '/^commit.*$/d' | sed -e 's/>Date:   \([0-9]*-[0-9]*-[0-9]*\)/>\n(\1)/g'  | \
+	sed -e '/^Author.*$/d'  | grep -vEi "(merge branch|fix merge conflicts|version bump|bump version|finalize|Conflicts:)" |  \
+	awk '{ if ($1=="Version") { gsub(/\,/,"", $2) ; printf "%s %s ", $1, $2 ; } else print $0}' | \
+	bash -c $filter_cmd | \
+	awk -v latest=$LATEST '{ if ($1!="") { if ($1== "Version") { if (exit_after==1) { print "\n"; exit } ; d=$3 ; sub(/^[\(]+/, "", d) ; sub(/[\)]+$/, "", d) ; gsub(/\//, "", $2) ; sub(/origin/, "", $2) ; sub(/tags/, "", $2) ; printf("\n%s, Version %s\n\n", d, $2) ; if (latest==1) { exit_after=1 ; } }  else  { s=$0 ; sub(/[ \t-]*/, "", s) ; printf("  * %s\n", s) } }  }' | \
+	while read l ; do
+		if [ "$old_l" != "$l" ] ; then
+			[ -n "$l" ] && nl=0
+			[ -n "$l" ] && old_l=$l || nl=$(($nl+1))
+			[ $nl -le 1 ] && echo $l
+		fi
+	done
+	exit 0
 else
-    echo "No git repository present."
-    exit 1
+	echo "No git repository present."
+	exit 1
 fi
